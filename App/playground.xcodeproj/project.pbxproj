@@ -13,6 +13,7 @@
 		AE99297F2C19DFFC00542D57 /* playgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE99297E2C19DFFC00542D57 /* playgroundTests.swift */; };
 		AE9929892C19DFFD00542D57 /* playgroundUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE9929882C19DFFD00542D57 /* playgroundUITests.swift */; };
 		AE99298B2C19DFFD00542D57 /* playgroundUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE99298A2C19DFFD00542D57 /* playgroundUITestsLaunchTests.swift */; };
+		AEB9CE792C1CA57F001C2867 /* TaskInvert.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB9CE782C1CA57F001C2867 /* TaskInvert.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +44,7 @@
 		AE9929842C19DFFD00542D57 /* playgroundUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = playgroundUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE9929882C19DFFD00542D57 /* playgroundUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = playgroundUITests.swift; sourceTree = "<group>"; };
 		AE99298A2C19DFFD00542D57 /* playgroundUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = playgroundUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		AEB9CE782C1CA57F001C2867 /* TaskInvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskInvert.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,6 +97,7 @@
 			isa = PBXGroup;
 			children = (
 				AE99296D2C19DFFB00542D57 /* App.swift */,
+				AEB9CE782C1CA57F001C2867 /* TaskInvert.swift */,
 				AE9929712C19DFFC00542D57 /* Assets.xcassets */,
 				AE9929732C19DFFC00542D57 /* Preview Content */,
 			);
@@ -256,6 +259,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AEB9CE792C1CA57F001C2867 /* TaskInvert.swift in Sources */,
 				AE99296E2C19DFFB00542D57 /* App.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -436,7 +440,9 @@
 				PRODUCT_BUNDLE_IDENTIFIER = cLoud.playground;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_GLOBAL_CONCURRENCY = YES;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -465,7 +471,9 @@
 				PRODUCT_BUNDLE_IDENTIFIER = cLoud.playground;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_UPCOMING_FEATURE_GLOBAL_CONCURRENCY = YES;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
