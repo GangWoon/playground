@@ -5,10 +5,10 @@ let package = Package(
   name: "playground",
   platforms: [.iOS(.v17)],
   products: [
-    .library(name: "AppFeature", targets: ["Capsule"])
+    .library(name: "Concurrency", targets: ["Concurrency"]),
   ],
   targets: [
-    .target(name: "Capsule")
+    .target(name: "Concurrency")
   ],
   swiftLanguageVersions: [.v6]
 )

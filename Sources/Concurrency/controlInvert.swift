@@ -13,7 +13,7 @@ public actor Cache<Request, Response> where Request: Requestable<Response> {
   private var cache: [AnyHashable: RequestState] = [:]
   private let streamContinuation: AsyncStream<(Request, CheckedContinuation<Response, Never>)>.Continuation
   private let stream: AsyncStream<(Request, CheckedContinuation<Response, Never>)>
-  
+
   public init() {
     var continuation: AsyncStream<(Request, CheckedContinuation<Response, Never>)>.Continuation!
     self.stream = .init { conti in
@@ -21,7 +21,7 @@ public actor Cache<Request, Response> where Request: Requestable<Response> {
     }
     self.streamContinuation = continuation
   }
-  
+
   public func run() async {
     await withDiscardingTaskGroup { group in
       for await (request, continuation) in self.stream {
@@ -35,7 +35,7 @@ public actor Cache<Request, Response> where Request: Requestable<Response> {
       }
     }
   }
-  
+
   private func receivedResponse(for id: AnyHashable, response: Response) {
     if case .loading(let continuations) = self.cache[id] {
       self.cache[id] = .response(response)
@@ -44,7 +44,7 @@ public actor Cache<Request, Response> where Request: Requestable<Response> {
       }
     }
   }
-  
+
   public func executeRequest(_ request: Request) async -> Response {
     switch self.cache[request.id] {
     case .response(let response):
@@ -75,7 +75,7 @@ public actor Cache<Request, Response> where Request: Requestable<Response> {
       }
     }
   }
-  
+
   /// 마지막꺼 지우는게 아닌, 배열에서 정확하게 누구인지 찾아서 지워야함.
   private func removeContinuation(for id: AnyHashable) {
     if case .loading(var continuations) = self.cache[id], !continuations.isEmpty {
@@ -102,31 +102,4 @@ struct TempRequest: Requestable {
 extension Cache<TempRequest, Int> {
   @MainActor
   static var intCache = Cache<TempRequest, Int>()
-}
-
-import SwiftUI
-
-struct TempView: View {
-  @State private var count = 0
-  let cache = Cache.intCache
-  
-  var body: some View {
-    Text("Control Invert")
-      .task {
-        await cache.run()
-      }
-      .onTapGesture {
-        let task = Task {
-          await cache.executeRequest(.init(id: 0))
-        }
-        
-        if count == 3 {
-          task.cancel()
-        }
-      }
-  }
-}
-
-#Preview {
-  TempView()
 }
