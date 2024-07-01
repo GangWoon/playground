@@ -7,14 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AE4EE0D92C20449E00483D7F /* AppFeature in Frameworks */ = {isa = PBXBuildFile; productRef = AE4EE0D82C20449E00483D7F /* AppFeature */; };
 		AE99296E2C19DFFB00542D57 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE99296D2C19DFFB00542D57 /* App.swift */; };
 		AE9929722C19DFFC00542D57 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE9929712C19DFFC00542D57 /* Assets.xcassets */; };
 		AE9929752C19DFFC00542D57 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE9929742C19DFFC00542D57 /* Preview Assets.xcassets */; };
 		AE99297F2C19DFFC00542D57 /* playgroundTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE99297E2C19DFFC00542D57 /* playgroundTests.swift */; };
 		AE9929892C19DFFD00542D57 /* playgroundUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE9929882C19DFFD00542D57 /* playgroundUITests.swift */; };
 		AE99298B2C19DFFD00542D57 /* playgroundUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE99298A2C19DFFD00542D57 /* playgroundUITestsLaunchTests.swift */; };
-		AEB9CE792C1CA57F001C2867 /* TaskInvert.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB9CE782C1CA57F001C2867 /* TaskInvert.swift */; };
+		AEBACCA82C2F31520023ECC6 /* Views in Frameworks */ = {isa = PBXBuildFile; productRef = AEBACCA72C2F31520023ECC6 /* Views */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,7 +44,6 @@
 		AE9929842C19DFFD00542D57 /* playgroundUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = playgroundUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE9929882C19DFFD00542D57 /* playgroundUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = playgroundUITests.swift; sourceTree = "<group>"; };
 		AE99298A2C19DFFD00542D57 /* playgroundUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = playgroundUITestsLaunchTests.swift; sourceTree = "<group>"; };
-		AEB9CE782C1CA57F001C2867 /* TaskInvert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskInvert.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,7 +51,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AE4EE0D92C20449E00483D7F /* AppFeature in Frameworks */,
+				AEBACCA82C2F31520023ECC6 /* Views in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -107,7 +105,6 @@
 			isa = PBXGroup;
 			children = (
 				AE99296D2C19DFFB00542D57 /* App.swift */,
-				AEB9CE782C1CA57F001C2867 /* TaskInvert.swift */,
 				AE9929712C19DFFC00542D57 /* Assets.xcassets */,
 				AE9929732C19DFFC00542D57 /* Preview Content */,
 			);
@@ -156,7 +153,7 @@
 			);
 			name = playground;
 			packageProductDependencies = (
-				AE4EE0D82C20449E00483D7F /* AppFeature */,
+				AEBACCA72C2F31520023ECC6 /* Views */,
 			);
 			productName = playground;
 			productReference = AE99296A2C19DFFB00542D57 /* playground.app */;
@@ -272,7 +269,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AEB9CE792C1CA57F001C2867 /* TaskInvert.swift in Sources */,
 				AE99296E2C19DFFB00542D57 /* App.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -440,6 +436,7 @@
 				DEVELOPMENT_TEAM = 6HG325P9V2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -471,6 +468,7 @@
 				DEVELOPMENT_TEAM = 6HG325P9V2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -605,9 +603,9 @@
 /* End XCConfigurationList section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		AE4EE0D82C20449E00483D7F /* AppFeature */ = {
+		AEBACCA72C2F31520023ECC6 /* Views */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = AppFeature;
+			productName = Views;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
