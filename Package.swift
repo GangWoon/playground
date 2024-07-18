@@ -11,7 +11,8 @@ let package = Package(
       targets: [
         "ScrollView",
         "TabBar",
-        "Animation"
+        "Animation",
+        "Shape"
       ]
     )
   ],
@@ -19,7 +20,8 @@ let package = Package(
     .target(name: "Concurrency"),
     .target(name: "ScrollView"),
     .target(name: "Animation"),
-    .target(name: "TabBar")
+    .target(name: "TabBar"),
+    .target(name: "Shape")
   ],
   swiftLanguageVersions: [.v6]
 )
