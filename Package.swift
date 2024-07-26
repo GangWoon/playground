@@ -21,7 +21,14 @@ let package = Package(
     .target(name: "ScrollView"),
     .target(name: "Animation"),
     .target(name: "TabBar"),
-    .target(name: "Shape")
+    .target(name: "Shape"),
+    .target(name: "ViewHelper")
   ],
   swiftLanguageVersions: [.v6]
 )
+
+for item in package.targets {
+  if item.name != "ViewHelper" {
+    item.dependencies = ["ViewHelper"]
+  }
+}
