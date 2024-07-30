@@ -10,9 +10,8 @@ let package = Package(
       name: "Views",
       targets: [
         "ScrollView",
-        "TabBar",
         "Animation",
-        "Shape"
+        "etc"
       ]
     )
   ],
@@ -20,11 +19,9 @@ let package = Package(
     .target(name: "Concurrency"),
     .target(name: "ScrollView"),
     .target(name: "Animation"),
-    .target(name: "TabBar"),
-    .target(name: "Shape"),
+    .target(name: "etc"),
     .target(name: "ViewHelper")
-  ],
-  swiftLanguageVersions: [.v6]
+  ]
 )
 
 for item in package.targets {
