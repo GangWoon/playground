@@ -37,34 +37,34 @@ struct EdgeCorners: Shape {
   }
   
   private func cornerPath(in rect: CGRect) -> Path {
-    var path = Path()
-    let width = rect.width
-    let height = rect.height
+    let width = rect.width * 0.4
+    let height = rect.height * 0.4
     
-    path.move(to: CGPoint(x: 0, y: height * 0.4))
+    var path = Path()
+    path.move(to: CGPoint(x: 0, y: height))
     path.addLine(
       to: CGPoint(
-        x: progress * width * 0.4,
-        y: progress * height * 0.4
+        x: progress * width,
+        y: progress * height
       )
     )
-    path.addLine(to: CGPoint(x: width * 0.4, y: 0))
+    path.addLine(to: CGPoint(x: width, y: 0))
     
     return path
   }
 }
 
 public struct FrameToCrossView: View {
-  @Binding var isSelected: Bool
+  var isSelected: Bool
   var color: Color
   var lineWidth: CGFloat
   
   public init(
-    isSelected: Binding<Bool>,
+    isSelected: Bool,
     color: Color = .black,
     lineWidth: CGFloat = 2
   ) {
-    self._isSelected = isSelected
+    self.isSelected = isSelected
     self.color = color
     self.lineWidth = lineWidth
   }
@@ -75,15 +75,15 @@ public struct FrameToCrossView: View {
       .background(Color.clear)
       .contentShape(Rectangle())
       .animation(.easeInOut, value: isSelected)
-      .onTapGesture { isSelected.toggle() }
   }
 }
 
 #Preview {
-  @Previewable @State var isActive: Bool = false
+  @Previewable @State var isSelected: Bool = false
   
   VStack {
-    FrameToCrossView(isSelected: $isActive)
+    FrameToCrossView(isSelected: isSelected)
+      .onTapGesture { isSelected.toggle() }
       .frame(width: 50, height: 50)
   }
 }
