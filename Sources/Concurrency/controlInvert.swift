@@ -1,6 +1,7 @@
 import Foundation
+
 public protocol Requestable: Sendable {
-  associatedtype ID: Hashable, Sendable
+  associatedtype ID: Hashable, Sendable, CustomStringConvertible
   associatedtype Response: Sendable
   func execute(id: ID) async throws -> Response
 }
@@ -28,19 +29,30 @@ public final class Cache<Request: Requestable>: Sendable {
             continuation.resume(returning: response)
             
           case .loading(let task, var continuations):
-            continuations.append(continuation)
-            state[id] = .loading(task, continuations)
+            if !Task.isCancelled {
+              task.cancel()
+              continuation.resume(throwing: CancellationError())
+            } else {
+              continuations.append(continuation)
+              state[id] = .loading(task, continuations)
+            }
             
           case nil:
-            state[id] = .loading(
-              self.buildTask(id),
-              [continuation]
-            )
+            if !Task.isCancelled {
+              state[id] = .loading(
+                self.buildTask(id),
+                [continuation]
+              )
+            } else {
+              continuation.resume(throwing: CancellationError())
+            }
           }
         }
       }
     } onCancel: {
-      guard case .loading(let task, _) = self.cachedStates[id] else { return }
+      guard
+        case .loading(let task, _) = self.cachedStates[id]
+      else { return }
       task.cancel()
     }
   }
@@ -50,8 +62,9 @@ public final class Cache<Request: Requestable>: Sendable {
       do {
         let response = try await self.request.execute(id: id)
         self.cachedStates.withValue { state in
-          
-          guard case .loading(_, let continuations) = state[id] else { return }
+          guard case .loading(_, let continuations) = state[id] else {
+            return
+          }
           for continuation in continuations {
             continuation.resume(returning: response)
           }
