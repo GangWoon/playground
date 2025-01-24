@@ -1,4 +1,5 @@
 import Foundation
+import UIKit.UIApplication
 
 public protocol Requestable<ID>: Sendable {
   associatedtype ID: Hashable, Sendable, CustomStringConvertible
@@ -10,27 +11,90 @@ public final class Cache<Request: Requestable>: Sendable {
   let request: Request
   let configuration: Configuration
   
-  private let storage: LockIsolated<NSCache<NSString, Box<RequestState>>>
-  private let keys = LockIsolated<Set<String>>([])
+  let storage: LockIsolated<Storage<Box<RequestState>>>
+  
+  private let memoryWarningTask = LockIsolated<Task<Void, Never>?>(nil)
+  private let expireTask = LockIsolated<Task<Void, Never>?>(nil)
   
   public init(
     request: Request,
-    configuration: Configuration
+    configuration: Configuration = Configuration()
   ) {
     self.request = request
     self.configuration = configuration
-    let cache = NSCache<NSString, Box<RequestState>>()
-    cache.totalCostLimit = configuration.limit.cost
-    self.storage = .init(cache)
+    self.storage = .init(.init(totoalCostLimit: configuration.limit.cost))
+    
+    self.memoryWarningTask.setValue(buildMemoryWarningTask())
+    self.expireTask.setValue(buildExpireTask())
   }
   
-  public func execute(_ id: Request.ID) async throws -> Request.Response {
+  private func buildMemoryWarningTask() -> Task<Void, Never> {
+    Task {
+      let stream = NotificationCenter.default
+        .publisher(for: UIApplication.didReceiveMemoryWarningNotification)
+        .values
+      for await _ in stream {
+        storage.withValue {
+          $0.removeAllObjects()
+        }
+      }
+    }
+  }
+  
+  private func buildExpireTask() -> Task<Void, Never> {
+    Task {
+      let stream = Timer
+        .publish(
+          every: configuration.cleanupInterval,
+          on: .main,
+          in: .common
+        )
+        .autoconnect()
+        .values
+      for await _ in stream {
+        self.removeExpired()
+      }
+    }
+  }
+  
+  private func removeExpired() {
+    storage.withValue { cache in
+      for (key, box) in cache where box.isExpired {
+        box.loadingState?.task.cancel()
+        cache.removeObject(forKey: key)
+      }
+    }
+  }
+  
+  public func execute(
+    _ id: Request.ID,
+    expiration: StorageExpiration? = nil
+  ) async throws -> Request.Response {
     try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
         storage.withValue { cache in
-          let key = id.description as NSString
-          let box = cache.object(forKey: key)
-          switch box?.value {
+          let key = id.description
+          
+          let box: Box<RequestState>
+          if let object = cache.object(forKey: key) {
+            box = object
+          } else {
+            guard !Task.isCancelled else {
+              continuation.resume(throwing: CancellationError())
+              return
+            }
+            let expiration = expiration ?? configuration.expiration
+            let task = buildTask(id, expiration: expiration)
+            box = Box<RequestState>(
+              key: key,
+              value: .loading(.init(task: task, continuations: [continuation])),
+              expiration: expiration
+            )
+            cache.setObject(box, forKey: key)
+            return
+          }
+          
+          switch box.value {
           case .response(let response):
             continuation.resume(returning: response)
             
@@ -41,43 +105,39 @@ public final class Cache<Request: Requestable>: Sendable {
               return
             }
             state.continuations.append(continuation)
-            /// 해당 부분에서 `loadingState`를 업데이트하지만, Box 내부 수정은 외부에서 관리되지 않으므로,
-            /// 반드시 `withValue` 안에서 원자적으로 처리되어야 함.
-            box?.value.loadingState = state
-            
-          case .none:
-            guard !Task.isCancelled else {
-              continuation.resume(throwing: CancellationError())
-              return
-            }
-            let initalTask = buildInitialTask(id)
-            let box = Box<RequestState>(
-              .loading(.init(task: initalTask, continuations: [continuation])),
-              expiration: .never
-            )
-            cache.setObject(box, forKey: key)
+            box.value.loadingState = state
+          }
+          
+          if !box.isExpired {
+            box.extendExpiration()
           }
         }
       }
     } onCancel: {
       let task = storage.withValue { cache in
-        cache.object(forKey: id.description as NSString)?.loadingState?.task
+        cache.object(forKey: id.description)?.loadingState?.task
       }
       task?.cancel()
     }
   }
   
-  private func buildInitialTask(_ id: Request.ID) -> Task<Void, Never> {
+  private func buildTask(
+    _ id: Request.ID,
+    expiration: StorageExpiration
+  ) -> Task<Void, Never> {
     Task {
       do {
         let response = try await self.request.execute(id: id)
-        
         let continuations: [Continuation] = try storage.withValue { cache  in
-          let key = id.description as NSString
+          let key = id.description
           guard
             let loadingState = cache.object(forKey: key)?.loadingState
           else { return [] }
-          let box = Box<RequestState>(.response(response), expiration: .never)
+          let box = Box<RequestState>(
+            key: key,
+            value: .response(response),
+            expiration: expiration
+          )
           cache.setObject(
             box,
             forKey: key,
@@ -85,7 +145,7 @@ public final class Cache<Request: Requestable>: Sendable {
           )
           return loadingState.continuations
         }
-        
+        try Task.checkCancellation()
         for continuation in continuations {
           continuation.resume(returning: response)
           await Task.yield()
@@ -98,12 +158,16 @@ public final class Cache<Request: Requestable>: Sendable {
   
   public func cancel(for id: Request.ID, error: any Error) {
     let continuations: [Continuation] = self.storage.withValue { cache in
-      let key = id.description as NSString
+      let key = id.description
       let continuations = cache
         .object(forKey: key)?
         .loadingState?
-        .continuations ?? []
+        .continuations
+      ?? cache.removedContinuations[key]
+      ?? []
+      
       cache.removeObject(forKey: key)
+      cache.removedContinuations[key] = nil
       
       return continuations
     }
@@ -118,6 +182,22 @@ public final class Cache<Request: Requestable>: Sendable {
 }
 
 extension Cache {
+  public struct Configuration: Sendable {
+    var limit: Measurement<UnitInformationStorage>
+    var expiration: StorageExpiration
+    var cleanupInterval: TimeInterval
+    
+    public init(
+      limit: Measurement<UnitInformationStorage> = .default,
+      expiration: StorageExpiration = .seconds(300),
+      cleanupInterval: TimeInterval = 120
+    ) {
+      self.limit = limit
+      self.expiration = expiration
+      self.cleanupInterval = cleanupInterval
+    }
+  }
+  
   typealias Continuation = CheckedContinuation<Request.Response, any Error>
   enum RequestState: Sendable {
     case response(Request.Response)
@@ -140,27 +220,10 @@ extension Cache {
     }
     case loading(LoadingState)
   }
-}
-
-extension Cache {
-  public struct Configuration: Sendable {
-    var limit: Measurement<UnitInformationStorage>
-    var expiration: StorageExpiration
-    var cleanupInterval: TimeInterval
-    
-    public init(
-      limit: Measurement<UnitInformationStorage> = .init(value: 300, unit: .bytes),
-      expiration: StorageExpiration = .seconds(300),
-      cleanupInterval: TimeInterval = 120000000
-    ) {
-      self.limit = limit
-      self.expiration = expiration
-      self.cleanupInterval = cleanupInterval
-    }
-  }
   
   @dynamicMemberLookup
   final class Box<Value> {
+    var key: String
     var value: Value
     let expiration: StorageExpiration
     private(set) var estimatedExpiration: Date
@@ -170,9 +233,11 @@ extension Cache {
     }
     
     init(
-      _ value: Value,
+      key: String,
+      value: Value,
       expiration: StorageExpiration
     ) {
+      self.key = key
       self.value = value
       self.expiration = expiration
       self.estimatedExpiration = expiration.estimatedExpirationSinceNow
@@ -194,6 +259,74 @@ extension Cache {
   }
 }
 
+extension Cache {
+  final class Storage<Value: AnyObject>: NSObject, NSCacheDelegate {
+    let cache = NSCache<NSString, Value>()
+    var keys = Set<String>()
+    var removedContinuations: [String: [Continuation]] = [:]
+    
+    init(totoalCostLimit: Int) {
+      self.cache.totalCostLimit = totoalCostLimit
+      super.init()
+      self.cache.delegate = self
+    }
+    
+    func object(forKey key: String) -> Value? {
+      cache.object(forKey: key as NSString)
+    }
+    
+    func setObject(_ obj: Value, forKey key: String, cost: Int = 0) {
+      cache.setObject(obj, forKey: key as NSString, cost: cost)
+      keys.insert(key)
+    }
+    
+    func removeObject(forKey key: String) {
+      cache.removeObject(forKey: key as NSString)
+      keys.remove(key)
+    }
+    
+    func removeAllObjects() {
+      cache.removeAllObjects()
+      keys.removeAll()
+    }
+    
+    func cache(
+      _ cache: NSCache<AnyObject, AnyObject>,
+      willEvictObject obj: Any
+    ) {
+      guard
+        let box = obj as? Box<RequestState>,
+        let loadingState = box.loadingState
+      else { return }
+      removedContinuations[box.key] = loadingState.continuations
+      keys.remove(box.key)
+    }
+  }
+}
+
+extension Cache.Storage: Sequence {
+  func makeIterator() -> AnyIterator<(String, Value)> {
+    var iterator = keys.makeIterator()
+    return AnyIterator {
+      while let key = iterator.next() {
+        if let value = self.cache.object(forKey: key as NSString) {
+          return (key, value)
+        }
+      }
+      return nil
+    }
+  }
+}
+
+extension Measurement<UnitInformationStorage> {
+  public static let `default`: Self = {
+    let totalMemory = ProcessInfo.processInfo.physicalMemory
+    let limit = totalMemory / 4
+    let costLimit = (limit > UInt64(Int.max)) ? UInt64(Int.max) : limit
+    return .init(value: Double(costLimit), unit: .bytes)
+  }()
+}
+
 extension Cache.RequestState: MemorySizeProvider {
   var estimatedMemory: Measurement<UnitInformationStorage> {
     get throws {
@@ -201,7 +334,7 @@ extension Cache.RequestState: MemorySizeProvider {
       case .response(let response):
         return try response.estimatedMemory
         
-        //TODO: 배열 자체도 크기를 갖기 때문에 추후에 수정하면 좋을 거 같습니다.
+        //TODO: 배열 자체도 크기를 갖기 때문에 추후에 수정하면 좋을 거 같음.
       case .loading:
         return .init(value: .zero, unit: .bytes)
       }
@@ -209,7 +342,22 @@ extension Cache.RequestState: MemorySizeProvider {
   }
 }
 
-import UIKit
+private extension LockIsolated where Value == Set<String> {
+  @discardableResult
+  func insert(_ element: String) -> (inserted: Bool, memberAfterInsert: String) {
+    withValue { $0.insert(element) }
+  }
+  
+  @discardableResult
+  func remove(_ element: String) -> String? {
+    withValue { $0.remove(element) }
+  }
+  
+  func removeAll() {
+    withValue { $0.removeAll() }
+  }
+}
+
 
 public protocol MemorySizeProvider: Sendable {
   var estimatedMemory: Measurement<UnitInformationStorage> { get throws }
@@ -252,3 +400,4 @@ public enum ExpirationExtending: Sendable {
   case cacheTime
   case expirationTime(expiration: StorageExpiration)
 }
+
