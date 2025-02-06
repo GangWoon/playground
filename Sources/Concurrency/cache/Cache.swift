@@ -22,37 +22,38 @@ public final actor Cache<Request: Requestable>: Sendable {
     }
   }
   
-  deinit {
-    memoryWarningTask?.cancel()
-    cleanupTask?.cancel()
-    print("Deinit Cache")
-  }
-  
   private func prepare(dependency: Dependecny) {
     memoryWarningTask = Task { [weak self] in
       let stream = dependency
         .memoryWarningStream()
         .values
-      for await _ in stream where !Task.isCancelled {
-        await self?.removeAllObject()
+      for await _ in stream {
+        guard let self, !Task.isCancelled else {
+          break
+        }
+        await self.removeAllObjects()
       }
     }
+    
+    let cleanupInterval = configuration.cleanupInterval
     cleanupTask = Task { [weak self] in
-      guard let self else { return }
       let stream = dependency
-        .cleanupTimerStream(configuration.cleanupInterval)
+        .cleanupTimerStream(cleanupInterval)
         .values
-      for await _ in stream where !Task.isCancelled {
-        await self.removeExpired()
+      for await _ in stream {
+        guard let self, !Task.isCancelled else {
+          break
+        }
+        await self.removeExpiredCacheItem()
       }
     }
   }
   
-  private func removeAllObject() {
+  private func removeAllObjects() {
     storage.removeAllObjects()
   }
   
-  private func removeExpired() {
+  private func removeExpiredCacheItem() {
     for (key, item) in storage where item.isExpired {
       if let loadingState = item.loadingState {
         loadingState.task.cancel()
@@ -60,6 +61,11 @@ public final actor Cache<Request: Requestable>: Sendable {
         storage.removeObject(forKey: key)
       }
     }
+  }
+  
+  deinit {
+    memoryWarningTask?.cancel()
+    cleanupTask?.cancel()
   }
   
   public func execute(
