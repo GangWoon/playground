@@ -1,7 +1,7 @@
 import Foundation
 
 extension Cache {
-  class Storage: IterableCache<String, CacheItem<RequestState>>, NSCacheDelegate {
+  final class Storage: IterableCache<String, CacheItem<RequestState>>, NSCacheDelegate {
     var removedContinuations: [String: [Continuation]] = [:]
     
     override init(totalCostLimit: Int) {
@@ -11,7 +11,21 @@ extension Cache {
     
     override func removeObject(forKey key: String) {
       super.removeObject(forKey: key)
-      removedContinuations[key] = nil
+      lock.withLock {
+        removedContinuations[key] = nil
+      }
+    }
+    
+    override func removeAllObjects() {
+      for key in keys {
+        object(forKey: key)?.loadingState?.task.cancel()
+      }
+      for continuations in removedContinuations {
+        for continutaion in continuations.value {
+          continutaion.resume(throwing: CancellationError())
+        }
+      }
+      super.removeAllObjects()
     }
     
     func setRequestState(
@@ -28,11 +42,11 @@ extension Cache {
     }
     
     func continuations(forKey key: String) -> [Continuation] {
-      lock.lock()
-      defer { lock.unlock() }
-      return object(forKey: key)?.value.loadingState?.continuations
-      ?? removedContinuations[key]
-      ?? []
+      lock.withLock {
+        object(forKey: key)?.loadingState?.continuations
+        ?? removedContinuations[key]
+        ?? []
+      }
     }
     
     // MARK: - NSCacheDelegate
@@ -41,14 +55,16 @@ extension Cache {
       _ cache: NSCache<AnyObject, AnyObject>,
       willEvictObject obj: Any
     ) {
-      guard let box = obj as? CacheItem<RequestState> else { return }
-      let key = box.key
-      switch box.value {
+      guard let item = obj as? CacheItem<RequestState> else {
+        return
+      }
+      let key = item.key
+      switch item.boxedValue {
       case .response:
         removedContinuations[key] = nil
         keys.remove(key)
       case .loading(let state):
-        removedContinuations[box.key] = state.continuations
+        removedContinuations[key] = state.continuations
       }
     }
   }
@@ -61,8 +77,13 @@ enum ExpirationLocals {
 @dynamicMemberLookup
 final class CacheItem<Value> {
   let key: String
-  var value: Value
+  private var value: Value
   let expiration: StorageExpiration
+  
+  var boxedValue: Value {
+    _read { yield value }
+    _modify { yield &value }
+  }
   
   var isExpired: Bool {
     Date().timeIntervalSince(estimatedExpiration) <= 0
@@ -80,6 +101,10 @@ final class CacheItem<Value> {
     self.estimatedExpiration = expiration.estimatedExpirationSinceNow
   }
   
+  deinit {
+    print("Deinit \(key) \(value)")
+  }
+  
   func extendExpiration(_ extendingExpiration: ExpirationExtending = .cacheTime) {
     switch extendingExpiration {
     case .none: break
@@ -90,7 +115,8 @@ final class CacheItem<Value> {
     }
   }
   
-  public subscript<Member>(dynamicMember keyPath: KeyPath<Value, Member>) -> Member {
-    value[keyPath: keyPath]
+  public subscript<Member>(dynamicMember keyPath: WritableKeyPath<Value, Member>) -> Member {
+    get { boxedValue[keyPath: keyPath] }
+    set { boxedValue[keyPath: keyPath] = newValue }
   }
 }

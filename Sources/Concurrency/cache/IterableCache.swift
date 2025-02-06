@@ -10,9 +10,8 @@ class IterableCache<Key: Hashable, Value: AnyObject>: NSObject {
   }
   
   func setObject(_ obj: Value, forKey key: Key, cost g: Int = 0) {
-    let ref = Ref(key)
-    lock.work {
-      cache.setObject(obj, forKey: ref, cost: g)
+    lock.withLock {
+      cache.setObject(obj, forKey: Ref(key), cost: g)
       keys.insert(key)
     }
   }
@@ -22,16 +21,23 @@ class IterableCache<Key: Hashable, Value: AnyObject>: NSObject {
   }
   
   func removeObject(forKey key: Key) {
-    lock.work {
+    lock.withLock {
       cache.removeObject(forKey: Ref(key))
       keys.remove(key)
     }
   }
   
   func removeAllObjects() {
-    lock.work {
+    lock.withLock {
       cache.removeAllObjects()
       keys.removeAll()
+    }
+  }
+  
+  func contains(forKey key: Key) -> Bool {
+    lock.withLock {
+      cache.object(forKey: Ref(key)) != nil
+      || keys.contains(key)
     }
   }
 }
@@ -68,13 +74,5 @@ extension IterableCache: Sequence {
       
       return nil
     }
-  }
-}
-
-private extension NSLock {
-  func work(_ work: () -> Void) {
-    lock()
-    defer { unlock() }
-    work()
   }
 }
