@@ -70,7 +70,7 @@ struct CacheTest {
         try await Task.sleep(nanoseconds: 100)
         cache.cancel(id: 3)
       }
-
+      
       _ = await task.value
     }
   }
@@ -88,18 +88,18 @@ struct CacheTest {
     #expect(await !cache.isCached(id: 3))
   }
   
-  /// 테스트코드 환경에서 타이머의 경우 오동작하는 경우가 있음. 이를 테스트하기 위해선, 다른 조치가 필요함.
-  /// CombineSchedulers를 사용하면 좋음.
-//  @Test func expiredCachedItem() async throws {
-//    let temp = Cache(
-//      request: TestNetworkClient(),
-//      configuration: .init(expiration: .seconds(0.2), cleanupInterval: 0.3)
-//    )
-//    _ = try await temp.execute(id: 3)
-//    #expect(await temp.isCached(id: 3))
-//    try await Task.sleep(for: .seconds(0.3))
-//    #expect(await !temp.isCached(id: 3))
-//  }
+  // 테스트코드 환경에서 타이머의 경우 오동작하는 경우가 있음. 이를 테스트하기 위해선, 다른 조치가 필요함.
+  // CombineSchedulers를 사용하면 좋음.
+  //  @Test func expiredCachedItem() async throws {
+  //    let temp = Cache(
+  //      request: TestNetworkClient(),
+  //      configuration: .init(expiration: .seconds(0.2), cleanupInterval: 0.3)
+  //    )
+  //    _ = try await temp.execute(id: 3)
+  //    #expect(await temp.isCached(id: 3))
+  //    try await Task.sleep(for: .seconds(0.3))
+  //    #expect(await !temp.isCached(id: 3))
+  //  }
   
   func superYield() async {
     for _ in 1...100 {
@@ -113,17 +113,11 @@ struct CacheTest {
       configuration: .init(limit: .init(value: 50, unit: .bytes))
     )
     for i in 1...3 {
-      do {
-        _ = try await cache.execute(id: i)
-      } catch {
-        print(error)
-      }
+      _ = try await cache.execute(id: i)
     }
     await confirmation(expectedCount: 2) { confirmation in
-      for i in 1...3 {
-        if await cache.isCached(id: i) {
-          confirmation()
-        }
+      for i in 1...3 where await cache.isCached(id: i) {
+        confirmation()
       }
     }
   }

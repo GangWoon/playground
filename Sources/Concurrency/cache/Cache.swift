@@ -80,24 +80,25 @@ public final actor Cache<Request: Requestable>: Sendable {
     
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
-        ExpirationLocals.$value.withValue(expiration ?? configuration.expiration) {
-          let item = storage.object(forKey: id.description)
-          switch item?.boxedValue {
-          case .response(let response):
-            continuation.resume(returning: response)
-            
-          case .loading:
-            item?.loadingState?.continuations.append(continuation)
-          case nil:
+        let item = storage.object(forKey: id.description)
+        switch item?.boxedValue {
+        case .response(let response):
+          continuation.resume(returning: response)
+          
+        case .loading:
+          item?.loadingState?.continuations.append(continuation)
+          
+        case nil:
+          ExpirationLocals.$value.withValue(expiration ?? configuration.expiration) {
             storage.setRequestState(
               .loading(.init(task: initialTask(id), continuations: [continuation])),
               forKey: id.description
             )
           }
-          
-          if let item, !item.isExpired {
-            item.extendExpiration()
-          }
+        }
+        
+        if let item, !item.isExpired {
+          item.extendExpiration()
         }
       }
     } onCancel: {
@@ -128,7 +129,6 @@ public final actor Cache<Request: Requestable>: Sendable {
       }
     }
   }
-  
   
   public nonisolated func cancel(id: Request.ID) {
     Task {
@@ -172,7 +172,7 @@ extension Cache {
   }
   
   typealias Continuation = CheckedContinuation<Request.Response, any Error>
-  enum RequestState: Sendable {
+  enum RequestState {
     case response(Request.Response)
     
     struct LoadingState: Sendable {

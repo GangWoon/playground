@@ -101,10 +101,6 @@ final class CacheItem<Value> {
     self.estimatedExpiration = expiration.estimatedExpirationSinceNow
   }
   
-  deinit {
-    print("Deinit \(key) \(value)")
-  }
-  
   func extendExpiration(_ extendingExpiration: ExpirationExtending = .cacheTime) {
     switch extendingExpiration {
     case .none: break
