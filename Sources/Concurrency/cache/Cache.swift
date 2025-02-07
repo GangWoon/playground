@@ -79,7 +79,7 @@ public final actor Cache<Request: Requestable>: Sendable {
     }
     
     return try await withTaskCancellationHandler {
-      try await withCheckedThrowingContinuation { continuation in
+      try await withUnsafeThrowingContinuation { continuation in
         let item = storage.object(forKey: id.description)
         switch item?.boxedValue {
         case .response(let response):
@@ -171,7 +171,7 @@ extension Cache {
     }
   }
   
-  typealias Continuation = CheckedContinuation<Request.Response, any Error>
+  typealias Continuation = UnsafeContinuation<Request.Response, any Error>
   enum RequestState {
     case response(Request.Response)
     
