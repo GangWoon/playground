@@ -1,5 +1,6 @@
 import UIKit.UIApplication
 import Foundation
+import Combine
 
 public final actor Cache<Request: Requestable>: Sendable {
   let request: Request
@@ -130,9 +131,9 @@ public final actor Cache<Request: Requestable>: Sendable {
     }
   }
   
-  public nonisolated func cancel(id: Request.ID) {
+  public nonisolated func cancel(id: sending @escaping @autoclosure () -> Request.ID) {
     Task {
-      await _cancel(for: id)
+      await _cancel(for: id())
     }
   }
   
@@ -151,8 +152,6 @@ public final actor Cache<Request: Requestable>: Sendable {
     storage.contains(forKey: id.description)
   }
 }
-
-import Combine
 
 extension Cache {
   public struct Configuration: Sendable {
