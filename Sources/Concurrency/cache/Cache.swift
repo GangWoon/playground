@@ -30,7 +30,7 @@ public final actor Cache<Request: Requestable>: Sendable {
         .values
       for await _ in stream {
         guard let self, !Task.isCancelled else {
-          break
+          return
         }
         await self.removeAllObjects()
       }
@@ -40,10 +40,10 @@ public final actor Cache<Request: Requestable>: Sendable {
     cleanupTask = Task { [weak self] in
       let stream = dependency
         .cleanupTimerStream(cleanupInterval)
-        .values
+      // TODO: -
       for await _ in stream {
         guard let self, !Task.isCancelled else {
-          break
+          return
         }
         await self.removeExpiredCacheItem()
       }
@@ -56,10 +56,9 @@ public final actor Cache<Request: Requestable>: Sendable {
   
   private func removeExpiredCacheItem() {
     for (key, item) in storage where item.isExpired {
-      if let loadingState = item.loadingState {
-        loadingState.task.cancel()
-      } else {
-        storage.removeObject(forKey: key)
+      storage.removeObject(forKey: key)
+      if let task = storage.loadingState(forKey: key)?.task {
+        task.cancel()
       }
     }
   }
@@ -73,7 +72,7 @@ public final actor Cache<Request: Requestable>: Sendable {
     id: Request.ID,
     expiration: StorageExpiration? = nil
   ) async throws -> Request.Response {
-    let task = storage.object(forKey: id.description)?.loadingState?.task
+    let task = storage.loadingState(forKey: id.description)?.task
     guard !Task.isCancelled else {
       task?.cancel()
       throw CancellationError()
@@ -81,25 +80,22 @@ public final actor Cache<Request: Requestable>: Sendable {
     
     return try await withTaskCancellationHandler {
       try await withUnsafeThrowingContinuation { continuation in
-        let item = storage.object(forKey: id.description)
-        switch item?.boxedValue {
+        let key = id.description
+        switch storage.requestState(forKey: key) {
         case .response(let response):
           continuation.resume(returning: response)
+          storage.extendCacheItem(forKey: key)
           
-        case .loading:
-          item?.loadingState?.continuations.append(continuation)
+        case .loading(let loadingState):
+          loadingState.continuations.append(continuation)
           
         case nil:
           ExpirationLocals.$value.withValue(expiration ?? configuration.expiration) {
             storage.setRequestState(
               .loading(.init(task: initialTask(id), continuations: [continuation])),
-              forKey: id.description
+              forKey: key
             )
           }
-        }
-        
-        if let item, !item.isExpired {
-          item.extendExpiration()
         }
       }
     } onCancel: {
@@ -111,10 +107,10 @@ public final actor Cache<Request: Requestable>: Sendable {
     Task {
       do {
         let response = try await request.execute(id: id)
-        try Task.checkCancellation()
         let key = id.description
-        let continuations = storage.continuations(forKey: key)
-        storage.removeObject(forKey: key)
+        let continuations = storage
+          .loadingState(forKey: key)?
+          .continuations ?? []
         storage.setRequestState(
           .response(response),
           forKey: key,
@@ -125,21 +121,28 @@ public final actor Cache<Request: Requestable>: Sendable {
           continuation.resume(returning: response)
           await Task.yield()
         }
+        
       } catch {
         _cancel(for: id, error: error)
       }
     }
   }
   
-  public nonisolated func cancel(id: sending @escaping @autoclosure () -> Request.ID) {
+  public nonisolated func cancel(id: sending Request.ID) {
     Task {
-      await _cancel(for: id())
+      await _cancel(for: id)
     }
   }
   
   private func _cancel(for id: Request.ID, error: any Error = CancellationError()) {
-    let continuations = storage.continuations(forKey: id.description)
+    let continuations = storage
+      .loadingState(forKey: id.description)?
+      .continuations ?? []
     storage.removeObject(forKey: id.description)
+    guard !continuations.isEmpty else {
+      return
+    }
+    
     Task {
       for continuation in continuations {
         continuation.resume(throwing: error)
@@ -174,9 +177,13 @@ extension Cache {
   enum RequestState {
     case response(Request.Response)
     
-    struct LoadingState: Sendable {
+    class LoadingState {
       let task: Task<Void, Never>
       var continuations: [Continuation]
+      init(task: Task<Void, Never>, continuations: [Continuation]) {
+        self.task = task
+        self.continuations = continuations
+      }
     }
     var loadingState: LoadingState? {
       get {
@@ -197,11 +204,11 @@ extension Cache {
   
   public struct Dependecny: Sendable {
     public var memoryWarningStream: @Sendable () -> AnyPublisher<Void, Never>
-    public var cleanupTimerStream: @Sendable (Double) -> AnyPublisher<Void, Never>
+    public var cleanupTimerStream: @Sendable (Double) -> AsyncStream<Void>
     
     public init(
       memoryWarningStream: @Sendable @escaping () -> AnyPublisher<Void, Never>,
-      cleanupTimerStream: @Sendable @escaping (Double) -> AnyPublisher<Void, Never>
+      cleanupTimerStream: @Sendable @escaping (Double) -> AsyncStream<Void>
     ) {
       self.memoryWarningStream = memoryWarningStream
       self.cleanupTimerStream = cleanupTimerStream
@@ -218,29 +225,21 @@ extension Cache.Dependecny {
           .map { _ in () }
           .eraseToAnyPublisher()
       },
-      cleanupTimerStream: {
-        Timer
-          .publish(every: $0, on: .main, in: .common)
-          .autoconnect()
-          .map { _ in () }
-          .eraseToAnyPublisher()
+      cleanupTimerStream: { value in
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        let task = Task {
+          while true {
+            try await Task.sleep(for: .seconds(value))
+            continuation.yield()
+          }
+        }
+        continuation.onTermination = { _ in
+          task.cancel()
+        }
+        
+        return stream
       }
     )
-  }
-}
-
-extension Cache.RequestState: MemorySizeProvider {
-  var estimatedMemory: Measurement<UnitInformationStorage> {
-    get throws {
-      switch self {
-      case .response(let response):
-        return try response.estimatedMemory
-        
-        /// 배열의 가변적인 크기를 NSCache cost 방식하고 어울리지 않음.
-      case .loading:
-        return Measurement(value: 0, unit: .bytes)
-      }
-    }
   }
 }
 

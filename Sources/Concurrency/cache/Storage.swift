@@ -1,8 +1,8 @@
 import Foundation
 
 extension Cache {
-  final class Storage: IterableCache<String, CacheItem<RequestState>>, NSCacheDelegate {
-    var removedContinuations: [String: [Continuation]] = [:]
+  final class Storage: IterableCache<String, CacheItem<Request.Response>>, NSCacheDelegate {
+    private var removedContinuations: [String: RequestState.LoadingState] = [:]
     
     override init(totalCostLimit: Int) {
       super.init(totalCostLimit: totalCostLimit)
@@ -11,21 +11,27 @@ extension Cache {
     
     override func removeObject(forKey key: String) {
       super.removeObject(forKey: key)
-      lock.withLock {
-        removedContinuations[key] = nil
-      }
+      removedContinuations[key] = nil
     }
     
     override func removeAllObjects() {
       for key in keys {
-        object(forKey: key)?.loadingState?.task.cancel()
-      }
-      for continuations in removedContinuations {
-        for continutaion in continuations.value {
-          continutaion.resume(throwing: CancellationError())
-        }
+        removedContinuations[key]?.task.cancel()
       }
       super.removeAllObjects()
+    }
+    
+    override func contains(forKey key: String) -> Bool {
+      return super.contains(forKey: key) || removedContinuations.keys.contains(key)
+    }
+    
+    func requestState(forKey key: String) -> RequestState? {
+      if let loadingState = removedContinuations[key] {
+        return .loading(loadingState)
+      } else if let response = object(forKey: key) {
+        return .response(response.boxedValue)
+      }
+      return nil
     }
     
     func setRequestState(
@@ -33,39 +39,42 @@ extension Cache {
       forKey key: String,
       cost: Int = 0
     ) {
-      let cacheItem = CacheItem<RequestState>(
-        key: key,
-        value: value,
-        expiration: ExpirationLocals.value
-      )
-      super.setObject(cacheItem, forKey: key, cost: cost)
-    }
-    
-    func continuations(forKey key: String) -> [Continuation] {
-      lock.withLock {
-        object(forKey: key)?.loadingState?.continuations
-        ?? removedContinuations[key]
-        ?? []
+      switch value {
+      case .response(let response):
+        removedContinuations[key] = nil
+        setObject(
+          .init(
+            key: key,
+            value: response,
+            expiration: ExpirationLocals.value
+          ),
+          forKey: key,
+          cost: cost
+        )
+      case .loading(let loadingState):
+        removedContinuations[key] = loadingState
       }
     }
     
+    func loadingState(forKey key: String) -> RequestState.LoadingState? {
+      lock.withLock { removedContinuations[key] }
+    }
+    
+    func extendCacheItem(forKey key: String) {
+      if let cacheItem = object(forKey: key), !cacheItem.isExpired {
+        cacheItem.extendExpiration()
+      }
+    }
+
     // MARK: - NSCacheDelegate
-    /// loading 상태에서 캐시 정책에 의해서 제거될 경우, 값을 저장해서 전파하기 위해서.
     func cache(
       _ cache: NSCache<AnyObject, AnyObject>,
-      willEvictObject obj: Any
+      willEvictObject object: Any
     ) {
-      guard let item = obj as? CacheItem<RequestState> else {
+      guard let item = object as? CacheItem<Request.Response> else {
         return
       }
-      let key = item.key
-      switch item.boxedValue {
-      case .response:
-        removedContinuations[key] = nil
-        keys.remove(key)
-      case .loading(let state):
-        removedContinuations[key] = state.continuations
-      }
+      keys.remove(item.key)
     }
   }
 }
