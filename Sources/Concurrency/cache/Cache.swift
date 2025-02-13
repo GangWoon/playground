@@ -40,7 +40,6 @@ public final actor Cache<Request: Requestable>: Sendable {
     cleanupTask = Task { [weak self] in
       let stream = dependency
         .cleanupTimerStream(cleanupInterval)
-      // TODO: -
       for await _ in stream {
         guard let self, !Task.isCancelled else {
           return
@@ -57,9 +56,6 @@ public final actor Cache<Request: Requestable>: Sendable {
   private func removeExpiredCacheItem() {
     for (key, item) in storage where item.isExpired {
       storage.removeObject(forKey: key)
-      if let task = storage.loadingState(forKey: key)?.task {
-        task.cancel()
-      }
     }
   }
   
@@ -121,7 +117,6 @@ public final actor Cache<Request: Requestable>: Sendable {
           continuation.resume(returning: response)
           await Task.yield()
         }
-        
       } catch {
         _cancel(for: id, error: error)
       }

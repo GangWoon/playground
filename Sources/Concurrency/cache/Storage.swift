@@ -95,7 +95,7 @@ final class CacheItem<Value> {
   }
   
   var isExpired: Bool {
-    Date().timeIntervalSince(estimatedExpiration) <= 0
+    Date().timeIntervalSince(estimatedExpiration) >= 0
   }
   private(set) var estimatedExpiration: Date
   
