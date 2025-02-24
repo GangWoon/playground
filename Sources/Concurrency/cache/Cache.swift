@@ -125,11 +125,15 @@ public final actor Cache<Request: Requestable>: Sendable {
   
   public nonisolated func cancel(id: sending Request.ID) {
     Task {
+      nonisolated(unsafe) let id = id
       await _cancel(for: id)
     }
   }
   
-  private func _cancel(for id: Request.ID, error: any Error = CancellationError()) {
+  private func _cancel(
+    for id: sending Request.ID,
+    error: any Error = CancellationError()
+  ) {
     let continuations = storage
       .loadingState(forKey: id.description)?
       .continuations ?? []
