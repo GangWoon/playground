@@ -68,64 +68,57 @@ public final actor Cache<Request: Requestable>: Sendable {
     id: Request.ID,
     expiration: StorageExpiration? = nil
   ) async throws -> Request.Response {
-    let task = storage.loadingState(forKey: id.description)?.task
+    let key = id.description
+    let task: Task<Request.Response, any Error> = if storage.object(forKey: key) == nil {
+      let task = initialTask(id)
+      
+      return task
+    } else {
+      storage.object(forKey: key)!.task!
+    }
     guard !Task.isCancelled else {
-      task?.cancel()
+      task.cancel()
       throw CancellationError()
     }
     
     return try await withTaskCancellationHandler {
-      try await withUnsafeThrowingContinuation { continuation in
-        let key = id.description
-        switch storage.requestState(forKey: key) {
-        case .response(let response):
-          continuation.resume(returning: response)
-          storage.extendCacheItem(forKey: key)
-          
-        case .loading(let loadingState):
-          loadingState.continuations.append(continuation)
-          
-        case nil:
-          ExpirationLocals.$value.withValue(expiration ?? configuration.expiration) {
-            storage.setRequestState(
-              .loading(.init(task: initialTask(id), continuations: [continuation])),
-              forKey: key
-            )
-          }
-        }
+      let key = id.description
+      switch storage.object(forKey: key)?.boxedValue {
+      case .response(let response):
+        storage.extendCacheItem(forKey: key)
+        return response
+        
+      case .loading(let loadingState):
+        return try await loadingState.value
+        
+      case nil:
+        return try await task.value
       }
     } onCancel: {
-      task?.cancel()
+      task.cancel()
     }
   }
   
-  private func initialTask(_ id: Request.ID) -> Task<Void, Never> {
+  private func initialTask(_ id: sending Request.ID) -> Task<Request.Response, any Error> {
     Task {
       do {
         let response = try await request.execute(id: id)
         let key = id.description
-        let continuations = storage
-          .loadingState(forKey: key)?
-          .continuations ?? []
         storage.setRequestState(
           .response(response),
           forKey: key,
           cost: try response.estimatedMemory.cost
         )
-        
-        for continuation in continuations {
-          continuation.resume(returning: response)
-          await Task.yield()
-        }
+        return response
       } catch {
         _cancel(for: id, error: error)
+        throw error
       }
     }
   }
   
   public nonisolated func cancel(id: sending Request.ID) {
     Task {
-      nonisolated(unsafe) let id = id
       await _cancel(for: id)
     }
   }
@@ -134,20 +127,9 @@ public final actor Cache<Request: Requestable>: Sendable {
     for id: sending Request.ID,
     error: any Error = CancellationError()
   ) {
-    let continuations = storage
-      .loadingState(forKey: id.description)?
-      .continuations ?? []
-    storage.removeObject(forKey: id.description)
-    guard !continuations.isEmpty else {
-      return
-    }
-    
-    Task {
-      for continuation in continuations {
-        continuation.resume(throwing: error)
-        await Task.yield()
-      }
-    }
+    let key = id.description
+    storage.object(forKey: key)?.task?.cancel()
+    storage.removeObject(forKey: key)
   }
   
   public func isCached(id: Request.ID) -> Bool {
@@ -175,30 +157,13 @@ extension Cache {
   typealias Continuation = UnsafeContinuation<Request.Response, any Error>
   enum RequestState {
     case response(Request.Response)
-    
-    class LoadingState {
-      let task: Task<Void, Never>
-      var continuations: [Continuation]
-      init(task: Task<Void, Never>, continuations: [Continuation]) {
-        self.task = task
-        self.continuations = continuations
+    var task: Task<Request.Response, any Error>? {
+      guard case .loading(let task) = self else {
+        return nil
       }
+      return task
     }
-    var loadingState: LoadingState? {
-      get {
-        guard case .loading(let state) = self else {
-          return nil
-        }
-        return state
-      }
-      set {
-        guard let newValue else {
-          return
-        }
-        self = .loading(newValue)
-      }
-    }
-    case loading(LoadingState)
+    case loading(Task<Request.Response, any Error>)
   }
   
   public struct Dependecny: Sendable {
