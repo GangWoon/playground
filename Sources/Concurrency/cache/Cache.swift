@@ -69,37 +69,38 @@ public final actor Cache<Request: Requestable>: Sendable {
     expiration: StorageExpiration? = nil
   ) async throws -> Request.Response {
     let key = id.description
-    let task: Task<Request.Response, any Error> = if storage.object(forKey: key) == nil {
-      let task = initialTask(id)
-      
-      return task
+    let task = if storage.object(forKey: key) != nil {
+      storage.object(forKey: key)?.task
     } else {
-      storage.object(forKey: key)!.task!
+      ExpirationLocals.$value.withValue(
+        expiration ?? configuration.expiration,
+        operation: {
+          let task = initialTask(id)
+          storage.setRequestState(.loading(task), forKey: key)
+          return task
+        }
+      )
     }
     guard !Task.isCancelled else {
-      task.cancel()
+      task?.cancel()
       throw CancellationError()
     }
     
     return try await withTaskCancellationHandler {
-      let key = id.description
       switch storage.object(forKey: key)?.boxedValue {
       case .response(let response):
         storage.extendCacheItem(forKey: key)
         return response
         
-      case .loading(let loadingState):
-        return try await loadingState.value
-        
-      case nil:
-        return try await task.value
+      case .loading, .none:
+        return try await task!.value
       }
     } onCancel: {
-      task.cancel()
+      task?.cancel()
     }
   }
   
-  private func initialTask(_ id: sending Request.ID) -> Task<Request.Response, any Error> {
+  private func initialTask(_ id: Request.ID) -> Task<Request.Response, any Error> {
     Task {
       do {
         let response = try await request.execute(id: id)
@@ -119,12 +120,13 @@ public final actor Cache<Request: Requestable>: Sendable {
   
   public nonisolated func cancel(id: sending Request.ID) {
     Task {
+      nonisolated(unsafe) let id = id
       await _cancel(for: id)
     }
   }
   
   private func _cancel(
-    for id: sending Request.ID,
+    for id: Request.ID,
     error: any Error = CancellationError()
   ) {
     let key = id.description
