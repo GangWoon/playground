@@ -81,10 +81,6 @@ public final actor Cache<Request: Requestable>: Sendable {
         }
       )
     }
-    guard !Task.isCancelled else {
-      task?.cancel()
-      throw CancellationError()
-    }
     
     return try await withTaskCancellationHandler {
       switch storage.object(forKey: key)?.boxedValue {
@@ -112,7 +108,7 @@ public final actor Cache<Request: Requestable>: Sendable {
         )
         return response
       } catch {
-        _cancel(for: id, error: error)
+        storage.removeObject(forKey: id.description)
         throw error
       }
     }
@@ -121,17 +117,13 @@ public final actor Cache<Request: Requestable>: Sendable {
   public nonisolated func cancel(id: sending Request.ID) {
     Task {
       nonisolated(unsafe) let id = id
-      await _cancel(for: id)
+      await _cancel(id)
     }
   }
   
-  private func _cancel(
-    for id: Request.ID,
-    error: any Error = CancellationError()
-  ) {
-    let key = id.description
-    storage.object(forKey: key)?.task?.cancel()
-    storage.removeObject(forKey: key)
+  public func _cancel(_ id: Request.ID) {
+    let task = storage.object(forKey: id.description)?.task
+    task?.cancel()
   }
   
   public func isCached(id: Request.ID) -> Bool {
