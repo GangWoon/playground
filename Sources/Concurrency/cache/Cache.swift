@@ -69,33 +69,28 @@ public final actor Cache<Request: Requestable>: Sendable {
     expiration: StorageExpiration? = nil
   ) async throws -> Request.Response {
     let key = id.description
-    
     switch storage.object(forKey: key)?.boxedValue {
     case .response(let response):
       storage.extendCacheItem(forKey: key)
       return response
       
-    case .loading(let task):
-      return try await withTaskCancellationHandler {
-        try await task.value
-      } onCancel: {
-        task.cancel()
+    case .loading, .none:
+      let task = if storage.object(forKey: key) != nil {
+        storage.object(forKey: key)?.task
+      } else {
+        ExpirationLocals.$value.withValue(
+          expiration ?? configuration.expiration,
+          operation: {
+            let task = initialTask(id)
+            storage.setRequestState(.loading(task), forKey: key)
+            return task
+          }
+        )
       }
-      
-    case .none:
-      let task = ExpirationLocals.$value.withValue(
-        expiration ?? configuration.expiration,
-        operation: {
-          let task = initialTask(id)
-          storage.setRequestState(.loading(task), forKey: key)
-          return task
-        }
+      return try await withTaskCancellationHandler(
+        operation: { try await task!.value },
+        onCancel: { task?.cancel() }
       )
-      return try await withTaskCancellationHandler {
-        try await task.value
-      } onCancel: {
-        task.cancel()
-      }
     }
   }
   
