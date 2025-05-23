@@ -29,9 +29,7 @@ public final actor Cache<Request: Requestable>: Sendable {
         .memoryWarningStream()
         .values
       for await _ in stream {
-        guard let self, !Task.isCancelled else {
-          return
-        }
+        guard let self else { return }
         await self.removeAllObjects()
       }
     }
@@ -41,9 +39,7 @@ public final actor Cache<Request: Requestable>: Sendable {
       let stream = dependency
         .cleanupTimerStream(cleanupInterval)
       for await _ in stream {
-        guard let self, !Task.isCancelled else {
-          return
-        }
+        guard let self else { return }
         await self.removeExpiredCacheItem()
       }
     }
@@ -59,24 +55,19 @@ public final actor Cache<Request: Requestable>: Sendable {
     }
   }
   
-  deinit {
-    memoryWarningTask?.cancel()
-    cleanupTask?.cancel()
-  }
-  
   public func execute(
     id: Request.ID,
     expiration: StorageExpiration? = nil
   ) async throws -> Request.Response {
     let key = id.description
-    switch storage.object(forKey: key)?.boxedValue {
+    switch storage.object(forKey: key)?.value {
     case .response(let response):
       storage.extendCacheItem(forKey: key)
       return response
       
     case .loading, .none:
       let task = if storage.object(forKey: key) != nil {
-        storage.object(forKey: key)?.task
+        (storage.object(forKey: key)?.task)!
       } else {
         ExpirationLocals.$value.withValue(
           expiration ?? configuration.expiration,
@@ -88,25 +79,25 @@ public final actor Cache<Request: Requestable>: Sendable {
         )
       }
       return try await withTaskCancellationHandler(
-        operation: { try await task!.value },
-        onCancel: { task?.cancel() }
+        operation: { try await task.value },
+        onCancel: { task.cancel() }
       )
     }
   }
   
   private func initialTask(_ id: Request.ID) -> Task<Request.Response, any Error> {
     Task {
+      let cacheKey = id.description
       do {
         let response = try await request.execute(id: id)
-        let key = id.description
         storage.setRequestState(
           .response(response),
-          forKey: key,
+          forKey: cacheKey,
           cost: try response.estimatedMemory.cost
         )
         return response
       } catch {
-        storage.removeObject(forKey: id.description)
+        storage.removeObject(forKey: cacheKey)
         throw error
       }
     }
@@ -150,9 +141,8 @@ extension Cache {
   enum RequestState {
     case response(Request.Response)
     var task: Task<Request.Response, any Error>? {
-      guard case .loading(let task) = self else {
-        return nil
-      }
+      guard case .loading(let task) = self
+      else { return nil }
       return task
     }
     case loading(Task<Request.Response, any Error>)

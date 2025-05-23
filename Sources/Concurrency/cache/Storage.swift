@@ -13,7 +13,11 @@ extension Cache {
       cost: Int = 0
     ) {
       setObject(
-        .init(key: key, value: value, expiration: ExpirationLocals.value),
+        CacheItem(
+          key: key,
+          value: value,
+          expiration: ExpirationLocals.value
+        ),
         forKey: key,
         cost: cost
       )
@@ -30,10 +34,13 @@ extension Cache {
       _ cache: NSCache<AnyObject, AnyObject>,
       willEvictObject object: Any
     ) {
-      guard let state = object as? CacheItem<RequestState> else {
-        return
+      guard let state = object as? CacheItem<RequestState>
+      else { return }
+      if let task = state.task {
+        task.cancel()
+      } else {
+        keys.remove(state.key)
       }
-      keys.remove(state.key)
     }
   }
 }
@@ -45,13 +52,8 @@ enum ExpirationLocals {
 @dynamicMemberLookup
 final class CacheItem<Value> {
   let key: String
-  private var value: Value
+  var value: Value
   let expiration: StorageExpiration
-  
-  var boxedValue: Value {
-    _read { yield value }
-    _modify { yield &value }
-  }
   
   var isExpired: Bool {
     Date().timeIntervalSince(estimatedExpiration) >= 0
@@ -80,6 +82,6 @@ final class CacheItem<Value> {
   }
   
   public subscript<Member>(dynamicMember keyPath: KeyPath<Value, Member>) -> Member {
-    get { boxedValue[keyPath: keyPath] }
+    get { value[keyPath: keyPath] }
   }
 }
